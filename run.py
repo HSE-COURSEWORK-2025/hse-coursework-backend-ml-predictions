@@ -102,7 +102,7 @@ async def make_predictions(
             return float(avg)
 
         # Если нет данных за последние 30 дней — берём крайние 30 записей
-        result = await session.execute(
+        result = session.execute(
             select(RawRecords.value)
             .where(RawRecords.email == email, RawRecords.data_type == data_type)
             .order_by(RawRecords.time.desc())
@@ -127,7 +127,7 @@ async def make_predictions(
             return float(avg)
 
         # Если нет данных за последние 30 дней — берём крайние 30 записей
-        result = await session.execute(
+        result = session.execute(
             select(ProcessedRecords.value)
             .where(ProcessedRecords.email == email, ProcessedRecords.data_type == data_type)
             .order_by(ProcessedRecords.time.desc())
