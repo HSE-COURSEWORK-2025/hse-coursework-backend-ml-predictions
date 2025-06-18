@@ -18,7 +18,7 @@ from settings import Settings
 
 from ml_models.insomnia_apnea import predict_sleep_disorder
 from models import SleepDisorderInput
-from make_predictions_funcs import make_insomnia_apnea_predictions, make_hypertension_predictions
+from make_predictions_funcs import make_insomnia_apnea_predictions, make_hypertension_predictions, make_depression_predictions
 
 # Настройки
 settings = Settings()
@@ -101,6 +101,10 @@ async def main(email: str):
     except Exception as e:
         logger.error(f'error during make_hypertension_predictions: {e}')
     
+    try:
+        await make_depression_predictions(records_db_session, users_db_session, email, iteration_number)
+    except Exception as e:
+        logger.error(f'error during make_depression_predictions: {e}')
 
     finish_time = datetime.utcnow().strftime("%Y-%m-%d %H:%M UTC")
     try:

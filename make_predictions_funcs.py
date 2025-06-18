@@ -19,6 +19,7 @@ from settings import Settings
 
 from ml_models.insomnia_apnea import predict_sleep_disorder
 from ml_models.hypertension import predict_hypertension
+from ml_models.depression import predict_depression
 from models import SleepDisorderInput
 
 
@@ -328,3 +329,66 @@ async def make_hypertension_predictions(records_db_session, users_db_session, em
 
     records_db_session.commit()
     logger.info(f"Committed {len(records)} ML predictions (hypertension) to DB")
+
+
+async def make_depression_predictions(records_db_session, users_db_session, email: str, iteration: int):
+    # 1) Получаем пользователя
+    result = users_db_session.execute(select(Users).where(Users.email == email))
+    user: Users | None = result.scalar_one_or_none()
+    if user is None:
+        logger.error(f"User with email '{email}' not found")
+        return
+
+    # 2) Вычисляем возраст
+    birth_date: date = user.birth_date.date()
+    today = date.today()
+    age = today.year - birth_date.year - ((today.month, today.day) < (birth_date.month, birth_date.day))
+
+    # 3) Собираем признаки
+    # 3.1 Средний пульс (за 30 дней или крайние 30 записей)
+    heart_rate = await compute_avg_raw_records(records_db_session, "HeartRateRecord", email)
+
+    # 3.2 Длительность сна (в минутах за день → в часах)
+    sleep_minutes = await compute_avg_processed_records(records_db_session, "SleepSessionTimeData", email)
+    sleep_duration = (sleep_minutes / 60) if sleep_minutes is not None else None
+
+    # 3.3 Среднее число шагов в день (за 30 дней или крайние 30)
+    daily_steps = await compute_avg_processed_records(records_db_session, "StepsRecord", email)
+
+    # 4) Проверяем, что ничего не пропущено
+    required = {
+        "heart_rate": heart_rate,
+        "sleep_duration": sleep_duration,
+        "physical_activity_steps": daily_steps,
+    }
+    missing = [k for k, v in required.items() if v is None]
+    if missing:
+        logger.error(f"Missing required fields for depression model: {', '.join(missing)}")
+        return
+
+    # 5) Вызываем модель
+    try:
+        # predict_depression возвращает JSON-строку с вероятностями
+        result_json = predict_depression(
+            heart_rate=int(heart_rate),
+            sleep_duration=float(sleep_duration),
+            physical_activity_steps=int(daily_steps),
+        )
+    except Exception as e:
+        logger.error(f"Error during depression prediction: {e}")
+        return
+
+    logger.info(f"Depression prediction for {email}: {result_json}")
+
+    # 6) Сохраняем в базу
+    now = datetime.utcnow()
+    rec = MLPredictionsRecords(
+        email=email,
+        result_value=result_json,
+        diagnosis_name="depression",
+        iteration_num=iteration,
+        iteration_datetime=now,
+    )
+    records_db_session.add(rec)
+    records_db_session.commit()
+    logger.info("Committed 1 ML prediction (depression) to DB")
