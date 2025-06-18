@@ -65,7 +65,23 @@ async def send_ml_completion_notification(
     logger.info("Sent ML completion notification email")
 
 
-async def make_predictions(
+def get_bmi_category(weight_kg: int|float, height_meters: int|float):
+    if weight_kg and height_meters:
+        bmi = weight_kg / (height_meters ** 2)
+
+        if bmi < 18.5:
+            return "Normal"
+        elif bmi < 25:
+            return "Normal Weight"
+        elif bmi < 30:
+            return "Overweight"
+        else:
+            return "Obese"
+    else:
+        raise Exception('not enough date for bmi')
+
+
+async def make_insomnia_apnea_predictions(
     records_db_session, users_db_session, email: str, iteration: int
 ):
     # Получаем данные пользователя
@@ -146,8 +162,35 @@ async def make_predictions(
     heart_rate = await compute_avg_raw_records(records_db_session, "HeartRateRecord")
     daily_steps = await compute_avg_processed_records(records_db_session, "StepsRecord")
 
+    last_weight_record = records_db_session.execute(
+        select(RawRecords.value)
+        .where(
+            RawRecords.email == email,
+            RawRecords.data_type == "WeightRecord"
+        )
+        .order_by(RawRecords.time.desc())
+        .limit(1)
+    )
+    weight = last_weight_record.scalar_one_or_none()
 
-    bmi_category = "normal"
+    last_height_record = records_db_session.execute(
+        select(RawRecords.value)
+        .where(
+            RawRecords.email == email,
+            RawRecords.data_type == "HeightRecord"
+        )
+        .order_by(RawRecords.time.desc())
+        .limit(1)
+    )
+    height = last_height_record.scalar_one_or_none()
+
+    try:
+        weight = float(weight)
+        height = float(height)
+        bmi_category = get_bmi_category(weight, height)
+    except Exception as e:
+        logger.error(f"Error during bmi calc: {e}")
+        return
 
     # Проверка наличия всех необходимых данных
     required_fields = {
@@ -165,7 +208,6 @@ async def make_predictions(
         return
 
     gender = gender.capitalize()
-    bmi_category = bmi_category.capitalize()
     # Готовим данные для ML-модели
     input_data = SleepDisorderInput(
         gender=gender,
@@ -226,7 +268,7 @@ async def main(email: str):
         logger.error(f"failed to send notification: {e}")
 
     # Выполняем предсказания
-    await make_predictions(
+    await make_insomnia_apnea_predictions(
         records_db_session, users_db_session, email, iteration_number
     )
 
