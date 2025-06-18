@@ -325,9 +325,9 @@ async def make_hypertension_predictions(records_db_session, users_db_session, em
         iteration_num=iteration,
         iteration_datetime=now,
     )
-    records.append(rec)
-
+    records_db_session.add(rec)
     records_db_session.commit()
+
     logger.info(f"Committed {len(records)} ML predictions (hypertension) to DB")
 
 
