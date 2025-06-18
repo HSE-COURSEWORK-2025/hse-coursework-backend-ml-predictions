@@ -205,6 +205,7 @@ async def make_predictions(
 
 
 async def main(email: str):
+    logger.info(f'launch for user {email}')
     # Подключаемся к БД
     records_db_session = await get_records_db_session().__anext__()
     users_db_session = await get_users_db_session().__anext__()
