@@ -89,10 +89,18 @@ async def main(email: str):
         logger.error(f"failed to send notification: {e}")
 
     # Выполняем предсказания
-    await make_insomnia_apnea_predictions(
-        records_db_session, users_db_session, email, iteration_number
-    )
-    await make_hypertension_predictions(records_db_session, users_db_session, email, iteration_number)
+    try:
+        await make_insomnia_apnea_predictions(
+            records_db_session, users_db_session, email, iteration_number
+        )
+    except Exception as e:
+        logger.error(f'error during make_insomnia_apnea_predictions: {e}')
+    
+    try:
+        await make_hypertension_predictions(records_db_session, users_db_session, email, iteration_number)
+    except Exception as e:
+        logger.error(f'error during make_hypertension_predictions: {e}')
+    
 
     finish_time = datetime.utcnow().strftime("%Y-%m-%d %H:%M UTC")
     try:

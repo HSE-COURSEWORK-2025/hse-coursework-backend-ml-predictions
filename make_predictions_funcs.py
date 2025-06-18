@@ -207,7 +207,7 @@ async def make_insomnia_apnea_predictions(
 
     records_db_session.add_all(records)
     records_db_session.commit()
-    logger.info(f"Committed {len(records)} ML predictions to DB")
+    logger.info(f"Committed {len(records)} ML predictions (insomnia/apnea) to DB")
 
 
 def categorize_physical_activity(minutes_per_day: float) -> str:
@@ -246,8 +246,8 @@ async def make_hypertension_predictions(records_db_session, users_db_session, em
     # Получаем необходимые параметры
     heart_rate = await compute_avg_raw_records(records_db_session, "HeartRateRecord", email)
     sleep_duration_minutes = await compute_avg_processed_records(records_db_session, "SleepSessionTimeData", email)
-    sleep_duration_hours = sleep_duration_minutes / 60 if sleep_duration_minutes else None
-
+    
+    sleep_duration_hours = sleep_duration_minutes / 60 if sleep_duration_minutes is not None else None
     physical_activity_mins_daily = await compute_avg_processed_records(
         records_db_session, "ActiveMinutesRecord", email
     )
@@ -303,8 +303,6 @@ async def make_hypertension_predictions(records_db_session, users_db_session, em
         "gender": gender,
     }
 
-    logger.info(f'inp hyper info {input_data}')
-
     try:
         predictions = predict_hypertension(**input_data)
     except Exception as e:
@@ -329,4 +327,4 @@ async def make_hypertension_predictions(records_db_session, users_db_session, em
     records.append(rec)
 
     records_db_session.commit()
-    logger.info(f"Committed {len(records)} ML predictions to DB")
+    logger.info(f"Committed {len(records)} ML predictions (hypertension) to DB")
