@@ -1,21 +1,12 @@
-import asyncio
-import argparse
 import logging
-import re
-import pickle
-import sys
 from datetime import datetime, date, timedelta
 
 from sqlalchemy.future import select
 from sqlalchemy import func, cast, Numeric
 
-from notifications import notifications_api
 from records_db.schemas import MLPredictionsRecords, RawRecords, ProcessedRecords
-from records_db.db_session import get_records_db_session
-from users_db.db_session import get_users_db_session
 from users_db.schemas import Users
 
-from settings import Settings
 
 from ml_models.insomnia_apnea import predict_sleep_disorder
 from ml_models.hypertension import predict_hypertension
@@ -42,12 +33,10 @@ def get_bmi_category(weight_kg: int | float, height_meters: int | float):
         raise Exception("not enough date for bmi")
 
 
-# Функция для вычисления среднего за последние 30 дней или крайние 30 записей
 async def compute_avg_raw_records(session, data_type, email):
     today = date.today()
     last_30_days = today - timedelta(days=30)
 
-    # Попытка среднего за последние 30 дней
     result = session.execute(
         select(func.avg(cast(RawRecords.value, Numeric))).where(
             RawRecords.email == email,
@@ -59,7 +48,6 @@ async def compute_avg_raw_records(session, data_type, email):
     if avg is not None:
         return float(avg)
 
-    # Если нет данных за последние 30 дней — берём крайние 30 записей
     result = session.execute(
         select(RawRecords.value)
         .where(RawRecords.email == email, RawRecords.data_type == data_type)
@@ -74,7 +62,6 @@ async def compute_avg_processed_records(session, data_type, email):
     today = date.today()
     last_30_days = today - timedelta(days=30)
 
-    # Попытка среднего за последние 30 дней
     result = session.execute(
         select(func.avg(cast(ProcessedRecords.value, Numeric))).where(
             ProcessedRecords.email == email,
@@ -86,7 +73,6 @@ async def compute_avg_processed_records(session, data_type, email):
     if avg is not None:
         return float(avg)
 
-    # Если нет данных за последние 30 дней — берём крайние 30 записей
     result = session.execute(
         select(ProcessedRecords.value)
         .where(ProcessedRecords.email == email, ProcessedRecords.data_type == data_type)
@@ -100,14 +86,12 @@ async def compute_avg_processed_records(session, data_type, email):
 async def make_insomnia_apnea_predictions(
     records_db_session, users_db_session, email: str, iteration: int
 ):
-    # Получаем данные пользователя
     result = users_db_session.execute(select(Users).where(Users.email == email))
     user: Users | None = result.scalar_one_or_none()
     if user is None:
         logger.error(f"User with email '{email}' not found in users database")
         return
 
-    # Извлекаем необходимые поля
     gender = user.gender
     birth_date: date = user.birth_date.date()
     today = date.today()
@@ -117,7 +101,6 @@ async def make_insomnia_apnea_predictions(
         - ((today.month, today.day) < (birth_date.month, birth_date.day))
     )
 
-    # Вычисляем параметры
     sleep_duration_hours = await compute_avg_processed_records(
         records_db_session, "SleepSessionTimeData", email
     )
@@ -157,7 +140,6 @@ async def make_insomnia_apnea_predictions(
         logger.error(f"Error during bmi calc: {e}")
         return
 
-    # Проверка наличия всех необходимых данных
     required_fields = {
         "gender": gender,
         "age": age,
@@ -173,7 +155,6 @@ async def make_insomnia_apnea_predictions(
         return
 
     gender = gender.capitalize()
-    # Готовим данные для ML-модели
     input_data = SleepDisorderInput(
         gender=gender,
         age=age,
@@ -224,17 +205,18 @@ def categorize_physical_activity(minutes_per_day: float) -> str:
         return "Moderate"
     else:
         return "High"
-    
 
-async def make_hypertension_predictions(records_db_session, users_db_session, email: str, iteration: int):
-    # Получаем данные пользователя
+
+async def make_hypertension_predictions(
+    records_db_session, users_db_session, email: str, iteration: int
+):
+
     result = users_db_session.execute(select(Users).where(Users.email == email))
     user: Users | None = result.scalar_one_or_none()
     if user is None:
         logger.error(f"User with email '{email}' not found in users database")
         return
 
-    # Извлекаем необходимые поля
     gender = user.gender
     birth_date: date = user.birth_date.date()
     today = date.today()
@@ -244,11 +226,16 @@ async def make_hypertension_predictions(records_db_session, users_db_session, em
         - ((today.month, today.day) < (birth_date.month, birth_date.day))
     )
 
-    # Получаем необходимые параметры
-    heart_rate = await compute_avg_raw_records(records_db_session, "HeartRateRecord", email)
-    sleep_duration_minutes = await compute_avg_processed_records(records_db_session, "SleepSessionTimeData", email)
-    
-    sleep_duration_hours = sleep_duration_minutes / 60 if sleep_duration_minutes is not None else None
+    heart_rate = await compute_avg_raw_records(
+        records_db_session, "HeartRateRecord", email
+    )
+    sleep_duration_minutes = await compute_avg_processed_records(
+        records_db_session, "SleepSessionTimeData", email
+    )
+
+    sleep_duration_hours = (
+        sleep_duration_minutes / 60 if sleep_duration_minutes is not None else None
+    )
     physical_activity_mins_daily = await compute_avg_processed_records(
         records_db_session, "ActiveMinutesRecord", email
     )
@@ -272,13 +259,12 @@ async def make_hypertension_predictions(records_db_session, users_db_session, em
     try:
         weight = float(weight)
         height = float(height)
-        bmi = weight / (height ** 2)
+        bmi = weight / (height**2)
     except Exception as e:
         logger.error(f"Error during bmi calc: {e}")
         return
 
-    # Собираем только нужные параметры для модели
-    country = 'Russia'
+    country = "Russia"
     required_fields = {
         "country": country,
         "age": age,
@@ -298,7 +284,9 @@ async def make_hypertension_predictions(records_db_session, users_db_session, em
         "country": required_fields["country"],
         "age": required_fields["age"],
         "bmi": required_fields["bmi"],
-        "physical_activity_level": categorize_physical_activity(int(required_fields["physical_activity_level"])),
+        "physical_activity_level": categorize_physical_activity(
+            int(required_fields["physical_activity_level"])
+        ),
         "sleep_duration": float(required_fields["sleep_duration"]),
         "heart_rate": int(required_fields["heart_rate"]),
         "gender": gender,
@@ -316,7 +304,6 @@ async def make_hypertension_predictions(records_db_session, users_db_session, em
     records = []
 
     name = "hypertension"
-    # predictions is already a JSON string
     result_value = predictions
     rec = MLPredictionsRecords(
         email=email,
@@ -331,31 +318,37 @@ async def make_hypertension_predictions(records_db_session, users_db_session, em
     logger.info(f"Committed {len(records)} ML predictions (hypertension) to DB")
 
 
-async def make_depression_predictions(records_db_session, users_db_session, email: str, iteration: int):
-    # 1) Получаем пользователя
+async def make_depression_predictions(
+    records_db_session, users_db_session, email: str, iteration: int
+):
+
     result = users_db_session.execute(select(Users).where(Users.email == email))
     user: Users | None = result.scalar_one_or_none()
     if user is None:
         logger.error(f"User with email '{email}' not found")
         return
 
-    # 2) Вычисляем возраст
     birth_date: date = user.birth_date.date()
     today = date.today()
-    age = today.year - birth_date.year - ((today.month, today.day) < (birth_date.month, birth_date.day))
+    age = (
+        today.year
+        - birth_date.year
+        - ((today.month, today.day) < (birth_date.month, birth_date.day))
+    )
 
-    # 3) Собираем признаки
-    # 3.1 Средний пульс (за 30 дней или крайние 30 записей)
-    heart_rate = await compute_avg_raw_records(records_db_session, "HeartRateRecord", email)
+    heart_rate = await compute_avg_raw_records(
+        records_db_session, "HeartRateRecord", email
+    )
 
-    # 3.2 Длительность сна (в минутах за день → в часах)
-    sleep_minutes = await compute_avg_processed_records(records_db_session, "SleepSessionTimeData", email)
+    sleep_minutes = await compute_avg_processed_records(
+        records_db_session, "SleepSessionTimeData", email
+    )
     sleep_duration = (sleep_minutes / 60) if sleep_minutes is not None else None
 
-    # 3.3 Среднее число шагов в день (за 30 дней или крайние 30)
-    daily_steps = await compute_avg_processed_records(records_db_session, "StepsRecord", email)
+    daily_steps = await compute_avg_processed_records(
+        records_db_session, "StepsRecord", email
+    )
 
-    # 4) Проверяем, что ничего не пропущено
     required = {
         "heart_rate": heart_rate,
         "sleep_duration": sleep_duration,
@@ -363,12 +356,12 @@ async def make_depression_predictions(records_db_session, users_db_session, emai
     }
     missing = [k for k, v in required.items() if v is None]
     if missing:
-        logger.error(f"Missing required fields for depression model: {', '.join(missing)}")
+        logger.error(
+            f"Missing required fields for depression model: {', '.join(missing)}"
+        )
         return
 
-    # 5) Вызываем модель
     try:
-        # predict_depression возвращает JSON-строку с вероятностями
         result_json = predict_depression(
             heart_rate=int(heart_rate),
             sleep_duration=float(sleep_duration),
@@ -380,7 +373,6 @@ async def make_depression_predictions(records_db_session, users_db_session, emai
 
     logger.info(f"Depression prediction for {email}: {result_json}")
 
-    # 6) Сохраняем в базу
     now = datetime.utcnow()
     rec = MLPredictionsRecords(
         email=email,

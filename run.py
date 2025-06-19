@@ -3,28 +3,27 @@ import argparse
 import logging
 import re
 import sys
-from datetime import datetime, date, timedelta
+from datetime import datetime
 
 from sqlalchemy.future import select
-from sqlalchemy import func, cast, Numeric
+from sqlalchemy import func
 
 from notifications import notifications_api
-from records_db.schemas import MLPredictionsRecords, RawRecords, ProcessedRecords
+from records_db.schemas import MLPredictionsRecords
 from records_db.db_session import get_records_db_session
 from users_db.db_session import get_users_db_session
-from users_db.schemas import Users
 
 from settings import Settings
 
-from ml_models.insomnia_apnea import predict_sleep_disorder
-from models import SleepDisorderInput
-from make_predictions_funcs import make_insomnia_apnea_predictions, make_hypertension_predictions, make_depression_predictions
+from make_predictions_funcs import (
+    make_insomnia_apnea_predictions,
+    make_hypertension_predictions,
+    make_depression_predictions,
+)
 
-# Настройки
 settings = Settings()
 EMAIL_REGEX = re.compile(r"^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$")
 
-# Логирование
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [%(levelname)s] %(message)s",
@@ -66,14 +65,12 @@ async def send_ml_completion_notification(
     logger.info("Sent ML completion notification email")
 
 
-
 async def main(email: str):
-    logger.info(f'launch for user {email}')
-    # Подключаемся к БД
+    logger.info(f"launch for user {email}")
+
     records_db_session = await get_records_db_session().__anext__()
     users_db_session = await get_users_db_session().__anext__()
 
-    # Определяем итерацию
     result = records_db_session.execute(
         select(func.max(MLPredictionsRecords.iteration_num)).where(
             MLPredictionsRecords.email == email
@@ -88,23 +85,26 @@ async def main(email: str):
     except Exception as e:
         logger.error(f"failed to send notification: {e}")
 
-    # Выполняем предсказания
     try:
         await make_insomnia_apnea_predictions(
             records_db_session, users_db_session, email, iteration_number
         )
     except Exception as e:
-        logger.error(f'error during make_insomnia_apnea_predictions: {e}')
-    
+        logger.error(f"error during make_insomnia_apnea_predictions: {e}")
+
     try:
-        await make_hypertension_predictions(records_db_session, users_db_session, email, iteration_number)
+        await make_hypertension_predictions(
+            records_db_session, users_db_session, email, iteration_number
+        )
     except Exception as e:
-        logger.error(f'error during make_hypertension_predictions: {e}')
-    
+        logger.error(f"error during make_hypertension_predictions: {e}")
+
     try:
-        await make_depression_predictions(records_db_session, users_db_session, email, iteration_number)
+        await make_depression_predictions(
+            records_db_session, users_db_session, email, iteration_number
+        )
     except Exception as e:
-        logger.error(f'error during make_depression_predictions: {e}')
+        logger.error(f"error during make_depression_predictions: {e}")
 
     finish_time = datetime.utcnow().strftime("%Y-%m-%d %H:%M UTC")
     try:

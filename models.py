@@ -1,8 +1,9 @@
 from pydantic import BaseModel
 from typing import Optional
 
+
 class SleepDisorderInput(BaseModel):
-    gender: Optional[str] = 'Male'
+    gender: Optional[str] = "Male"
     age: Optional[int] = 22
     sleep_duration_hours: float
     physical_activity_mins_daily: int
@@ -35,4 +36,3 @@ class SleepDisorderOutput(BaseModel):
     Insomnia: float
     Sleep_Apnea: float
     nan: float
-
